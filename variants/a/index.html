@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Logseq-ish Planner Demo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">L</div>
+        <div>
+          <div class="title">Logseq-ish Planner Demo</div>
+          <div class="subtitle">Variant A · simpler topbar · drawers · query blocks</div>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button id="btnToggleNav" class="btn btn-ghost" title="Nav (Cmd+J)">☰</button>
+        <button id="btnToday" class="btn">Today</button>
+        <button id="btnTogglePanel" class="btn btn-ghost" title="Panel (Cmd+L)">⧉</button>
+        <button id="btnReset" class="btn btn-danger" title="Reset">Reset</button>
+      </div>
+    </header>
+
+    <!-- Left nav drawer (hidden by default) -->
+    <aside id="navDrawer" class="drawer" aria-label="Navigation">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-title">Navigation</div>
+          <div class="drawer-sub">Journals & Pages</div>
+        </div>
+        <div class="drawer-actions">
+          <button id="btnNewJournal" class="btn btn-small">+ Journal</button>
+          <button id="btnNewPage" class="btn btn-small btn-ghost">+ Page</button>
+          <button id="btnCloseNav" class="btn btn-small btn-ghost">Close</button>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <div class="section-title">Journals</div>
+        <div id="journalList" class="list"></div>
+      </div>
+
+      <div class="drawer-section">
+        <div class="section-title">Pages</div>
+        <div id="pageList" class="list"></div>
+      </div>
+    </aside>
+
+    <!-- Right side panel drawer (hidden by default) -->
+    <aside id="sidePanel" class="drawer drawer-right" aria-label="Side Panel">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-title">Panel</div>
+          <div class="drawer-sub">Backlinks · Tags · Views</div>
+        </div>
+        <div class="drawer-actions">
+          <button id="btnClosePanel" class="btn btn-small btn-ghost">Close</button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="backlinks">Backlinks</button>
+        <button class="tab" data-tab="tags">Tags</button>
+        <button class="tab" data-tab="views">Views</button>
+      </div>
+
+      <div id="tab-backlinks" class="tab-panel active">
+        <div class="hint">Blocks that mention this page via [[...]]</div>
+        <div id="backlinkList" class="mini-list"></div>
+      </div>
+
+      <div id="tab-tags" class="tab-panel">
+        <div class="hint">Click a tag to filter blocks.</div>
+        <div id="tagCloud" class="tag-cloud"></div>
+        <div class="divider"></div>
+        <div id="tagResults" class="mini-list"></div>
+      </div>
+
+      <div id="tab-views" class="tab-panel">
+        <div class="hint">Saved query views (from {{query ...}} blocks).</div>
+        <div id="views" class="views"></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="panel">
+        <div class="doc-head">
+          <div>
+            <div class="doc-title" id="docTitle">Today</div>
+            <div class="doc-sub" id="docSub">
+              Cmd+Enter cycles TODO → DOING → DONE · Type #tags and [[Page]] links · Query blocks render inline
+            </div>
+          </div>
+          <div class="doc-actions">
+            <button id="btnAddBlock" class="btn">+ Block</button>
+            <button id="btnAddQuery" class="btn btn-ghost" title="Insert a query block">+ Query</button>
+          </div>
+        </div>
+        <div id="blockList" class="blocks"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div>This is a UX demo only. No AI, no backend. Data stays in this browser (localStorage).</div>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
