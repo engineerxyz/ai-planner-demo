@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Planner Demo (Logseq-inspired)</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">◻︎</div>
+        <div>
+          <div class="title">Planner Demo</div>
+          <div class="subtitle">Journals · [[Links]] · #tags · TODO/DOING/DONE · Queries (local only)</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="btnToday" class="btn">Today</button>
+        <button id="btnDashboard" class="btn">Dashboard</button>
+        <button id="btnReset" class="btn btn-danger" title="Clear local demo data">Reset</button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <div class="panel-title">Journals</div>
+          <div class="panel-sub">Daily notes (encouraged)</div>
+          <div class="journal-actions">
+            <button id="btnNewJournal" class="btn btn-small">New journal</button>
+          </div>
+          <div id="journalList" class="list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">Pages</div>
+          <div class="panel-sub">Created via [[Page]] links</div>
+          <div id="pageList" class="list"></div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="panel">
+          <div class="panel-title" id="editorTitle">Today</div>
+          <div class="panel-sub" id="editorSub">Tip: Cmd+Enter cycles TODO → DOING → DONE. Use #tags and [[Page]] links.</div>
+
+          <div class="toolbar">
+            <button id="btnAddBlock" class="btn">Add block</button>
+            <button id="btnFocusQuery" class="btn btn-ghost">Open query</button>
+          </div>
+
+          <div class="content">
+            <div class="editor">
+              <div id="blockList" class="blocks"></div>
+            </div>
+
+            <div class="right">
+              <div class="right-tabs">
+                <button class="tab active" data-tab="backlinks">Backlinks</button>
+                <button class="tab" data-tab="tags">Tags</button>
+                <button class="tab" data-tab="query">Query</button>
+              </div>
+
+              <div id="tab-backlinks" class="tab-panel active">
+                <div class="hint">Backlinks to current page/journal.</div>
+                <div id="backlinkList" class="mini-list"></div>
+              </div>
+
+              <div id="tab-tags" class="tab-panel">
+                <div class="hint">Click a tag to filter blocks.</div>
+                <div id="tagCloud" class="tag-cloud"></div>
+                <div class="divider"></div>
+                <div id="tagResults" class="mini-list"></div>
+              </div>
+
+              <div id="tab-query" class="tab-panel">
+                <div class="hint">Query = filter blocks and pin results to a view.</div>
+
+                <div class="form">
+                  <label>Status</label>
+                  <div class="seg">
+                    <button class="seg-btn" data-status="ALL">All</button>
+                    <button class="seg-btn" data-status="TODO">TODO</button>
+                    <button class="seg-btn" data-status="DOING">DOING</button>
+                    <button class="seg-btn" data-status="DONE">DONE</button>
+                  </div>
+
+                  <label>#Tag (optional)</label>
+                  <input id="qTag" class="input" placeholder="#work (without # is ok)" />
+
+                  <label>Contains (optional)</label>
+                  <input id="qText" class="input" placeholder="keyword" />
+
+                  <label>Where</label>
+                  <select id="qScope" class="input">
+                    <option value="ALL">All pages/journals</option>
+                    <option value="CURRENT">Current page/journal</option>
+                  </select>
+
+                  <div class="row">
+                    <button id="btnRunQuery" class="btn">Run</button>
+                    <button id="btnSaveView" class="btn btn-ghost" title="Save this query as a dashboard view">Save view</button>
+                  </div>
+                </div>
+
+                <div class="divider"></div>
+                <div class="panel-title" style="font-size: 13px;">Results</div>
+                <div id="queryResults" class="mini-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="dashboardPanel" style="display:none;">
+          <div class="panel-title">Dashboard (Query views)</div>
+          <div class="panel-sub">Pinned query views simulate Logseq-style query blocks.</div>
+          <div id="views" class="views"></div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="footer">
+      <div>
+        This is a UX demo only. Data is stored in your browser (localStorage). No AI calls.
+      </div>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
