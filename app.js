@@ -1,20 +1,13 @@
 /*
-  Logseq-ish Planner Demo v3 (UX simplification)
+  Logseq-ish Planner Demo v4
 
-  Your answers:
-  - Most used screen: Journal (Today)
-  - Complexity pain: C (not keyboard-first enough)
-  - Demo goal: C (both, but writing feel matters)
-
-  Therefore:
-  - Single-column editor as default
-  - Nav + Side panel are drawers (hidden by default)
-  - Query is core via inline query blocks
+  Change: Query is no longer a raw "{{query ...}}" syntax block.
+  Instead, users create a View card (filters) that renders selected blocks.
 
   Storage: localStorage only. No AI.
 */
 
-const LS_KEY = 'logseq-ish-planner-demo:v3';
+const LS_KEY = 'logseq-ish-planner-demo:v4';
 const STATUS = ['TODO', 'DOING', 'DONE'];
 
 function todayId() {
@@ -47,11 +40,28 @@ function saveState(state) {
   localStorage.setItem(LS_KEY, JSON.stringify(state));
 }
 
-function newBlock(text = '') {
+function newTextBlock(text = '') {
   return {
     id: crypto.randomUUID(),
+    type: 'text',
     text,
     status: 'TODO',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+}
+
+function newViewBlock(view) {
+  return {
+    id: crypto.randomUUID(),
+    type: 'view',
+    view: {
+      name: view.name || '',
+      scope: view.scope || 'CURRENT', // CURRENT | ALL
+      status: view.status || 'TODO', // TODO | DOING | DONE | ALL
+      tag: view.tag || '', // without #
+      contains: view.contains || '',
+    },
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
@@ -70,9 +80,9 @@ function ensureState() {
         title: tid,
         createdAt: nowIso(),
         blocks: [
-          newBlock('오늘 무엇을 할까? #work [[ProjectX]]'),
-          newBlock('Cmd+Enter 로 TODO/DOING/DONE 상태를 순환한다.'),
-          newBlock('{{query status:TODO scope:current}}'),
+          newTextBlock('오늘 무엇을 할까? #work [[ProjectX]]'),
+          newTextBlock('Cmd+Enter 로 TODO/DOING/DONE 상태를 순환한다.'),
+          newViewBlock({ name: '오늘 TODO', status: 'TODO', scope: 'CURRENT' }),
         ],
       },
     },
@@ -81,10 +91,10 @@ function ensureState() {
         id: 'Dashboard',
         title: 'Dashboard',
         createdAt: nowIso(),
-        blocks: [newBlock('[[Dashboard]] 에 쿼리 블록을 모아두자.'), newBlock('{{query status:DOING scope:all}}')],
+        blocks: [newTextBlock('[[Dashboard]] 에 View 카드(필터)를 모아두자.'), newViewBlock({ name: '전체 DOING', status: 'DOING', scope: 'ALL' })],
       },
     },
-    views: [],
+    savedViews: [],
   };
 
   saveState(state);
@@ -126,11 +136,11 @@ function collectAllBlocks(state) {
 function ensurePage(title) {
   const id = title;
   if (state.pages[id]) return;
-  state.pages[id] = { id, title, createdAt: nowIso(), blocks: [newBlock(`[[${title}]] page created.`)] };
+  state.pages[id] = { id, title, createdAt: nowIso(), blocks: [newTextBlock(`[[${title}]] page created.`)] };
 }
 
 function upsertPagesFromLinks() {
-  const blocks = collectAllBlocks(state);
+  const blocks = collectAllBlocks(state).filter((b) => b.type === 'text');
   for (const b of blocks) {
     const links = parseLinks(b.text);
     for (const l of links) ensurePage(l);
@@ -155,49 +165,38 @@ function cycleStatus(current) {
   return STATUS[(idx + 1) % STATUS.length];
 }
 
-// query blocks
-function parseQueryBlock(text) {
-  const m = String(text || '').trim().match(/^\{\{query\s+(.+?)\}\}$/i);
-  if (!m) return null;
-  const body = m[1].trim();
-  const tokens = body.split(/\s+/g);
-  const q = { status: 'ALL', tag: '', text: '', scope: 'ALL' };
-  for (const t of tokens) {
-    const [kRaw, vRaw] = t.split(':');
-    if (!vRaw) continue;
-    const k = kRaw.toLowerCase();
-    const v = vRaw.trim();
-    if (k === 'status') q.status = v.toUpperCase();
-    if (k === 'tag') q.tag = v.replace(/^#/, '');
-    if (k === 'contains' || k === 'text') q.text = v;
-    if (k === 'scope') q.scope = v.toUpperCase() === 'CURRENT' ? 'CURRENT' : 'ALL';
-  }
-  return q;
-}
+function runView(view, forScopeType, forScopeId) {
+  let filtered = collectAllBlocks(state)
+    .filter((b) => b.type === 'text')
+    .map((b) => b);
 
-function runQuery(q, forScopeType, forScopeId) {
-  let filtered = collectAllBlocks(state);
-  if (q.scope === 'CURRENT') filtered = filtered.filter((b) => b.scopeType === forScopeType && b.scopeId === forScopeId);
-  if (q.status && q.status !== 'ALL') filtered = filtered.filter((b) => b.status === q.status);
-  if (q.tag) filtered = filtered.filter((b) => parseTags(b.text).includes(q.tag));
-  if (q.text) {
-    const low = q.text.toLowerCase();
+  if ((view.scope || 'CURRENT') === 'CURRENT') {
+    filtered = filtered.filter((b) => b.scopeType === forScopeType && b.scopeId === forScopeId);
+  }
+  if (view.status && view.status !== 'ALL') {
+    filtered = filtered.filter((b) => b.status === view.status);
+  }
+  if (view.tag) {
+    filtered = filtered.filter((b) => parseTags(b.text).includes(view.tag));
+  }
+  if (view.contains) {
+    const low = view.contains.toLowerCase();
     filtered = filtered.filter((b) => String(b.text || '').toLowerCase().includes(low));
   }
+
   filtered.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return filtered;
 }
 
-function viewSubtitle(q) {
+function viewLabel(view) {
   const parts = [];
-  parts.push(q.scope === 'CURRENT' ? 'scope:current' : 'scope:all');
-  if (q.status !== 'ALL') parts.push(`status:${q.status}`);
-  if (q.tag) parts.push(`#${q.tag}`);
-  if (q.text) parts.push(`contains:${q.text}`);
+  parts.push(view.scope === 'ALL' ? '전체' : '현재');
+  parts.push(view.status === 'ALL' ? '모든 상태' : view.status);
+  if (view.tag) parts.push(`#${view.tag}`);
+  if (view.contains) parts.push(`contains:${view.contains}`);
   return parts.join(' · ');
 }
 
-// drawers
 function openDrawer(id) {
   el(id).classList.add('open');
 }
@@ -249,184 +248,248 @@ function renderDocHeader() {
   else title.textContent = doc.title;
 }
 
+function renderTextBlock(doc, b) {
+  const wrap = document.createElement('div');
+  wrap.className = 'block';
+
+  const row = document.createElement('div');
+  row.className = 'block-row';
+
+  const bullet = document.createElement('div');
+  bullet.className = 'bullet';
+
+  const main = document.createElement('div');
+  main.style.flex = '1';
+
+  const head = document.createElement('div');
+  head.style.display = 'flex';
+  head.style.justifyContent = 'space-between';
+  head.style.gap = '8px';
+  head.style.alignItems = 'center';
+
+  const pill = document.createElement('span');
+  pill.className = `pill ${b.status.toLowerCase()}`;
+  pill.textContent = b.status;
+
+  const tools = document.createElement('div');
+  tools.className = 'block-tools';
+
+  const btnCycle = document.createElement('button');
+  btnCycle.className = 'icon-btn';
+  btnCycle.textContent = '↻';
+  btnCycle.title = 'Cycle status';
+  btnCycle.onclick = () => {
+    b.status = cycleStatus(b.status);
+    b.updatedAt = nowIso();
+    saveState(state);
+    render();
+  };
+
+  const btnDel = document.createElement('button');
+  btnDel.className = 'icon-btn';
+  btnDel.textContent = '✕';
+  btnDel.title = 'Delete block';
+  btnDel.onclick = () => {
+    doc.blocks = doc.blocks.filter((x) => x.id !== b.id);
+    saveState(state);
+    render();
+  };
+
+  tools.appendChild(btnCycle);
+  tools.appendChild(btnDel);
+
+  head.appendChild(pill);
+  head.appendChild(tools);
+
+  const ta = document.createElement('textarea');
+  ta.value = b.text;
+  ta.placeholder = 'Write… (#tag, [[Page]])';
+
+  ta.oninput = () => {
+    b.text = ta.value;
+    b.updatedAt = nowIso();
+    upsertPagesFromLinks();
+    saveState(state);
+    renderSide();
+    renderLists();
+    renderBlocks();
+  };
+
+  ta.onkeydown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      b.status = cycleStatus(b.status);
+      b.updatedAt = nowIso();
+      saveState(state);
+      render();
+    }
+  };
+
+  main.appendChild(head);
+  main.appendChild(ta);
+
+  const tags = parseTags(b.text);
+  const links = parseLinks(b.text);
+  if (tags.length || links.length) {
+    const meta = document.createElement('div');
+    meta.className = 'block-meta';
+
+    tags.forEach((t) => {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = `#${t}`;
+      tag.onclick = () => {
+        openDrawer('sidePanel');
+        setPanelTab('tags');
+        showTag(t);
+      };
+      meta.appendChild(tag);
+    });
+
+    links.forEach((l) => {
+      const lk = document.createElement('span');
+      lk.className = 'link';
+      lk.textContent = `[[${l}]]`;
+      lk.onclick = () => {
+        ensurePage(l);
+        saveState(state);
+        setCurrentDoc('page', l);
+      };
+      meta.appendChild(lk);
+    });
+
+    main.appendChild(meta);
+  }
+
+  row.appendChild(bullet);
+  row.appendChild(main);
+  wrap.appendChild(row);
+  return wrap;
+}
+
+function promptCreateOrEditView(existing) {
+  const v = { ...(existing || {}) };
+  v.name = prompt('View name (optional)?', v.name || '') ?? v.name;
+
+  const status = (prompt('Status? (TODO/DOING/DONE/ALL)', v.status || 'TODO') || v.status || 'TODO').toUpperCase();
+  v.status = ['TODO', 'DOING', 'DONE', 'ALL'].includes(status) ? status : 'TODO';
+
+  const scope = (prompt('Scope? (CURRENT/ALL)', v.scope || 'CURRENT') || v.scope || 'CURRENT').toUpperCase();
+  v.scope = scope === 'ALL' ? 'ALL' : 'CURRENT';
+
+  const tag = prompt('Tag? (without #, optional)', v.tag || '') ?? v.tag;
+  v.tag = String(tag || '').trim();
+
+  const contains = prompt('Contains? (keyword, optional)', v.contains || '') ?? v.contains;
+  v.contains = String(contains || '').trim();
+
+  return v;
+}
+
+function renderViewBlock(doc, b) {
+  const wrap = document.createElement('div');
+  wrap.className = 'block view-block';
+
+  const row = document.createElement('div');
+  row.className = 'block-row';
+
+  const bullet = document.createElement('div');
+  bullet.className = 'bullet';
+
+  const main = document.createElement('div');
+  main.style.flex = '1';
+
+  const card = document.createElement('div');
+  card.className = 'view-card';
+
+  const head = document.createElement('div');
+  head.className = 'view-card-head';
+
+  const left = document.createElement('div');
+  left.innerHTML = `<div class="view-card-title">${escapeHtml(b.view.name || 'View')}</div><div class="view-card-sub">${escapeHtml(viewLabel(b.view))}</div>`;
+
+  const actions = document.createElement('div');
+  actions.className = 'view-card-actions';
+
+  const btnEdit = document.createElement('button');
+  btnEdit.className = 'btn btn-small btn-ghost';
+  btnEdit.textContent = 'Edit';
+  btnEdit.onclick = () => {
+    b.view = promptCreateOrEditView(b.view);
+    b.updatedAt = nowIso();
+    saveState(state);
+    render();
+  };
+
+  const btnSave = document.createElement('button');
+  btnSave.className = 'btn btn-small btn-ghost';
+  btnSave.textContent = 'Save';
+  btnSave.onclick = () => {
+    const name = (b.view.name || '').trim() || viewLabel(b.view);
+    state.savedViews.unshift({ id: crypto.randomUUID(), name, view: b.view, createdAt: nowIso() });
+    saveState(state);
+    openDrawer('sidePanel');
+    setPanelTab('views');
+    renderSide();
+  };
+
+  const btnDel = document.createElement('button');
+  btnDel.className = 'icon-btn';
+  btnDel.textContent = '✕';
+  btnDel.title = 'Delete view';
+  btnDel.onclick = () => {
+    doc.blocks = doc.blocks.filter((x) => x.id !== b.id);
+    saveState(state);
+    render();
+  };
+
+  actions.appendChild(btnEdit);
+  actions.appendChild(btnSave);
+  actions.appendChild(btnDel);
+
+  head.appendChild(left);
+  head.appendChild(actions);
+
+  const results = runView(b.view, state.ui.currentType, state.ui.currentId).slice(0, 8);
+  const body = document.createElement('div');
+  body.className = 'view-card-body mini-list';
+
+  if (!results.length) {
+    body.innerHTML = `<div class="mini-item"><div>No results</div><div class="small">Try changing filters.</div></div>`;
+  } else {
+    results.forEach((r) => {
+      const item = document.createElement('div');
+      item.className = 'mini-item';
+      item.innerHTML = `<div>${escapeHtml(shorten(r.text, 120))}</div><div class="small">${r.status} · ${r.scopeType} · ${escapeHtml(r.scopeTitle)}</div>`;
+      item.onclick = () => setCurrentDoc(r.scopeType, r.scopeId);
+      body.appendChild(item);
+    });
+  }
+
+  card.appendChild(head);
+  card.appendChild(body);
+  main.appendChild(card);
+
+  row.appendChild(bullet);
+  row.appendChild(main);
+  wrap.appendChild(row);
+  return wrap;
+}
+
 function renderBlocks() {
   const doc = currentDoc();
   const list = el('blockList');
   list.innerHTML = '';
 
   doc.blocks.forEach((b) => {
-    const wrap = document.createElement('div');
-    wrap.className = 'block';
-
-    const row = document.createElement('div');
-    row.className = 'block-row';
-
-    const bullet = document.createElement('div');
-    bullet.className = 'bullet';
-
-    const main = document.createElement('div');
-    main.style.flex = '1';
-
-    const head = document.createElement('div');
-    head.style.display = 'flex';
-    head.style.justifyContent = 'space-between';
-    head.style.gap = '8px';
-    head.style.alignItems = 'center';
-
-    const pill = document.createElement('span');
-    pill.className = `pill ${b.status.toLowerCase()}`;
-    pill.textContent = b.status;
-
-    const tools = document.createElement('div');
-    tools.className = 'block-tools';
-
-    const btnCycle = document.createElement('button');
-    btnCycle.className = 'icon-btn';
-    btnCycle.textContent = '↻';
-    btnCycle.title = 'Cycle status';
-    btnCycle.onclick = () => {
-      b.status = cycleStatus(b.status);
-      b.updatedAt = nowIso();
-      saveState(state);
-      render();
-    };
-
-    const btnDel = document.createElement('button');
-    btnDel.className = 'icon-btn';
-    btnDel.textContent = '✕';
-    btnDel.title = 'Delete block';
-    btnDel.onclick = () => {
-      doc.blocks = doc.blocks.filter((x) => x.id !== b.id);
-      saveState(state);
-      render();
-    };
-
-    tools.appendChild(btnCycle);
-    tools.appendChild(btnDel);
-
-    head.appendChild(pill);
-    head.appendChild(tools);
-
-    const ta = document.createElement('textarea');
-    ta.value = b.text;
-    ta.placeholder = 'Write… (#tag, [[Page]], or {{query status:TODO scope:current}})';
-
-    ta.oninput = () => {
-      b.text = ta.value;
-      b.updatedAt = nowIso();
-      upsertPagesFromLinks();
-      saveState(state);
-      renderSide();
-      renderLists();
-      renderBlocks();
-    };
-
-    ta.onkeydown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        b.status = cycleStatus(b.status);
-        b.updatedAt = nowIso();
-        saveState(state);
-        render();
-      }
-    };
-
-    main.appendChild(head);
-    main.appendChild(ta);
-
-    // meta chips
-    const tags = parseTags(b.text);
-    const links = parseLinks(b.text);
-    if (tags.length || links.length) {
-      const meta = document.createElement('div');
-      meta.className = 'block-meta';
-
-      tags.forEach((t) => {
-        const tag = document.createElement('span');
-        tag.className = 'tag';
-        tag.textContent = `#${t}`;
-        tag.onclick = () => {
-          openDrawer('sidePanel');
-          setPanelTab('tags');
-          showTag(t);
-        };
-        meta.appendChild(tag);
-      });
-
-      links.forEach((l) => {
-        const lk = document.createElement('span');
-        lk.className = 'link';
-        lk.textContent = `[[${l}]]`;
-        lk.onclick = () => {
-          ensurePage(l);
-          saveState(state);
-          setCurrentDoc('page', l);
-        };
-        meta.appendChild(lk);
-      });
-
-      main.appendChild(meta);
-    }
-
-    // query render
-    const q = parseQueryBlock(b.text);
-    if (q) {
-      const qWrap = document.createElement('div');
-      qWrap.className = 'query-render';
-
-      const qHead = document.createElement('div');
-      qHead.className = 'query-head';
-
-      const left = document.createElement('div');
-      left.innerHTML = `<div class="query-title">Query</div><div class="query-sub">${escapeHtml(viewSubtitle(q))}</div>`;
-
-      const right = document.createElement('div');
-      const btnSave = document.createElement('button');
-      btnSave.className = 'btn btn-small btn-ghost';
-      btnSave.textContent = 'Save view';
-      btnSave.onclick = () => {
-        const name = prompt('View name?', viewSubtitle(q));
-        if (!name) return;
-        state.views.unshift({ id: crypto.randomUUID(), name, query: q, createdAt: nowIso() });
-        saveState(state);
-        renderSide();
-        openDrawer('sidePanel');
-        setPanelTab('views');
-      };
-      right.appendChild(btnSave);
-
-      qHead.appendChild(left);
-      qHead.appendChild(right);
-      qWrap.appendChild(qHead);
-
-      const results = runQuery(q, state.ui.currentType, state.ui.currentId).slice(0, 10);
-      const resList = document.createElement('div');
-      resList.className = 'mini-list';
-      if (!results.length) {
-        resList.innerHTML = `<div class="mini-item"><div>No results</div><div class="small">Try changing status/tag.</div></div>`;
-      } else {
-        results.forEach((r) => {
-          const item = document.createElement('div');
-          item.className = 'mini-item';
-          item.innerHTML = `<div>${escapeHtml(shorten(r.text, 120))}</div><div class="small">${r.status} · ${r.scopeType} · ${escapeHtml(r.scopeTitle)}</div>`;
-          item.onclick = () => setCurrentDoc(r.scopeType, r.scopeId);
-          resList.appendChild(item);
-        });
-      }
-      qWrap.appendChild(resList);
-      main.appendChild(qWrap);
-    }
-
-    row.appendChild(bullet);
-    row.appendChild(main);
-    wrap.appendChild(row);
-    list.appendChild(wrap);
+    if (b.type === 'view') list.appendChild(renderViewBlock(doc, b));
+    else list.appendChild(renderTextBlock(doc, b));
   });
 }
 
 function backlinkItemsForCurrent() {
   const doc = currentDoc();
-  const blocks = collectAllBlocks(state);
+  const blocks = collectAllBlocks(state).filter((b) => b.type === 'text');
   const target = state.ui.currentType === 'page' ? `[[${doc.title}]]` : doc.id;
 
   return blocks
@@ -455,7 +518,7 @@ function renderBacklinks() {
 function renderTagCloud() {
   const cloud = el('tagCloud');
   cloud.innerHTML = '';
-  const blocks = collectAllBlocks(state);
+  const blocks = collectAllBlocks(state).filter((b) => b.type === 'text');
   const freq = new Map();
   blocks.forEach((b) => parseTags(b.text).forEach((t) => freq.set(t, (freq.get(t) || 0) + 1)));
 
@@ -478,7 +541,7 @@ function showTag(tag) {
   const results = el('tagResults');
   results.innerHTML = '';
 
-  const blocks = collectAllBlocks(state);
+  const blocks = collectAllBlocks(state).filter((b) => b.type === 'text');
   const hits = blocks.filter((b) => parseTags(b.text).includes(tag));
 
   results.innerHTML = `<div class="mini-item"><div><b>#${escapeHtml(tag)}</b></div><div class="small">${hits.length} blocks</div></div>`;
@@ -492,15 +555,15 @@ function showTag(tag) {
   });
 }
 
-function renderViews() {
+function renderSavedViews() {
   const root = el('views');
   root.innerHTML = '';
-  if (!state.views.length) {
-    root.innerHTML = `<div class="mini-item"><div>No saved views</div><div class="small">Save view from a query block.</div></div>`;
+  if (!state.savedViews.length) {
+    root.innerHTML = `<div class="mini-item"><div>No saved views</div><div class="small">Save from a View card.</div></div>`;
     return;
   }
 
-  state.views.slice(0, 10).forEach((v) => {
+  state.savedViews.slice(0, 10).forEach((v) => {
     const box = document.createElement('div');
     box.className = 'view';
 
@@ -508,27 +571,28 @@ function renderViews() {
     head.className = 'view-head';
 
     const left = document.createElement('div');
-    left.innerHTML = `<div class="view-title">${escapeHtml(v.name)}</div><div class="view-sub">${escapeHtml(viewSubtitle(v.query))}</div>`;
+    left.innerHTML = `<div class="view-title">${escapeHtml(v.name)}</div><div class="view-sub">${escapeHtml(viewLabel(v.view))}</div>`;
 
     const btnX = document.createElement('button');
     btnX.className = 'icon-btn';
     btnX.textContent = '✕';
-    btnX.title = 'Remove view';
+    btnX.title = 'Remove saved view';
     btnX.onclick = () => {
-      state.views = state.views.filter((x) => x.id !== v.id);
+      state.savedViews = state.savedViews.filter((x) => x.id !== v.id);
       saveState(state);
-      renderViews();
+      renderSavedViews();
     };
 
     head.appendChild(left);
     head.appendChild(btnX);
     box.appendChild(head);
 
-    const results = runQuery(v.query, state.ui.currentType, state.ui.currentId).slice(0, 5);
+    const results = runView(v.view, state.ui.currentType, state.ui.currentId).slice(0, 5);
     const list = document.createElement('div');
     list.className = 'mini-list';
+
     if (!results.length) {
-      list.innerHTML = `<div class="mini-item"><div>No results</div><div class="small">Edit the query block.</div></div>`;
+      list.innerHTML = `<div class="mini-item"><div>No results</div><div class="small">Try editing a View card.</div></div>`;
     } else {
       results.forEach((r) => {
         const item = document.createElement('div');
@@ -538,6 +602,7 @@ function renderViews() {
         list.appendChild(item);
       });
     }
+
     box.appendChild(list);
     root.appendChild(box);
   });
@@ -546,39 +611,37 @@ function renderViews() {
 function renderSide() {
   renderBacklinks();
   renderTagCloud();
-  renderViews();
+  renderSavedViews();
 }
 
 function wireUI() {
-  // drawer controls
   el('btnToggleNav').onclick = () => el('navDrawer').classList.toggle('open');
   el('btnTogglePanel').onclick = () => el('sidePanel').classList.toggle('open');
   el('btnCloseNav').onclick = () => closeDrawer('navDrawer');
   el('btnClosePanel').onclick = () => closeDrawer('sidePanel');
 
-  // tabs
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.onclick = () => setPanelTab(btn.dataset.tab);
   });
 
-  // actions
   el('btnAddBlock').onclick = () => {
     const doc = currentDoc();
-    doc.blocks.unshift(newBlock(''));
+    doc.blocks.unshift(newTextBlock(''));
     saveState(state);
     render();
   };
 
-  el('btnAddQuery').onclick = () => {
+  el('btnAddView').onclick = () => {
     const doc = currentDoc();
-    doc.blocks.unshift(newBlock('{{query status:TODO scope:current}}'));
+    const view = promptCreateOrEditView({ name: '', status: 'TODO', scope: 'CURRENT', tag: '', contains: '' });
+    doc.blocks.unshift(newViewBlock(view));
     saveState(state);
     render();
   };
 
   el('btnToday').onclick = () => {
     const tid = todayId();
-    if (!state.journals[tid]) state.journals[tid] = { id: tid, title: tid, createdAt: nowIso(), blocks: [newBlock('')] };
+    if (!state.journals[tid]) state.journals[tid] = { id: tid, title: tid, createdAt: nowIso(), blocks: [newTextBlock('')] };
     saveState(state);
     setCurrentDoc('journal', tid);
   };
@@ -591,7 +654,7 @@ function wireUI() {
       n += 1;
       id = `${base} (${n})`;
     }
-    state.journals[id] = { id, title: id, createdAt: nowIso(), blocks: [newBlock('')] };
+    state.journals[id] = { id, title: id, createdAt: nowIso(), blocks: [newTextBlock('')] };
     saveState(state);
     setCurrentDoc('journal', id);
   };
@@ -611,7 +674,6 @@ function wireUI() {
     render();
   };
 
-  // keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && k === 'j') {

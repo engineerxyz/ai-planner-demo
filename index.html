@@ -12,14 +12,14 @@
         <div class="logo">L</div>
         <div>
           <div class="title">Logseq-ish Planner Demo</div>
-          <div class="subtitle">Journal-first · keyboard-first · query blocks</div>
+          <div class="subtitle">Journal-first · keyboard-first · Views (no raw query syntax)</div>
         </div>
       </div>
 
       <div class="top-actions">
         <button id="btnToday" class="btn">Today</button>
-        <button id="btnToggleNav" class="btn btn-ghost" title="Toggle navigation (Journals/Pages)">Nav</button>
-        <button id="btnTogglePanel" class="btn btn-ghost" title="Toggle side panel (Backlinks/Tags/Views)">Panel</button>
+        <button id="btnToggleNav" class="btn btn-ghost" title="Toggle navigation (Cmd+J)">Nav</button>
+        <button id="btnTogglePanel" class="btn btn-ghost" title="Toggle panel (Cmd+L)">Panel</button>
         <button id="btnReset" class="btn btn-danger" title="Clear local demo data">Reset</button>
       </div>
     </header>
@@ -80,7 +80,7 @@
       </div>
 
       <div id="tab-views" class="tab-panel">
-        <div class="hint">Saved query views (from {{query ...}} blocks).</div>
+        <div class="hint">Saved views (created from “+ View”).</div>
         <div id="views" class="views"></div>
       </div>
     </aside>
@@ -91,20 +91,12 @@
           <div>
             <div class="doc-title" id="docTitle">Today</div>
             <div class="doc-sub" id="docSub">
-              Cmd+Enter cycles TODO → DOING → DONE · Type #tags and [[Page]] links · Query blocks render inline
+              Cmd+Enter cycles TODO → DOING → DONE · Type #tags and [[Page]] links · Use “+ View” to show filtered blocks
             </div>
           </div>
           <div class="doc-actions">
             <button id="btnAddBlock" class="btn">+ Block</button>
-            <button id="btnAddQuery" class="btn btn-ghost" title="Insert a query block">+ Query</button>
-          </div>
-        </div>
-
-        <div class="tip">
-          <div class="tip-title">Query block syntax (demo)</div>
-          <div class="tip-body">
-            <code>{{query status:TODO scope:current}}</code>
-            <span class="muted">(also: status:DOING/DONE, tag:#work, contains:keyword, scope:all)</span>
+            <button id="btnAddView" class="btn btn-ghost" title="Insert a View card">+ View</button>
           </div>
         </div>
 
