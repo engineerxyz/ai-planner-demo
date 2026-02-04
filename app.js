@@ -1,18 +1,20 @@
 /*
-  Logseq-ish Planner Demo (UX only)
+  Logseq-ish Planner Demo v3 (UX simplification)
 
-  Must-haves implemented:
-  - Journals (daily notes)
-  - [[Links]] + #tags + backlinks
-  - Cmd+Enter cycles TODO → DOING → DONE
-  - Query is core: query blocks + saved query views
+  Your answers:
+  - Most used screen: Journal (Today)
+  - Complexity pain: C (not keyboard-first enough)
+  - Demo goal: C (both, but writing feel matters)
 
-  Notes:
-  - localStorage only (no backend, no AI)
-  - Query MVP = A: status/tag/contains/scope
+  Therefore:
+  - Single-column editor as default
+  - Nav + Side panel are drawers (hidden by default)
+  - Query is core via inline query blocks
+
+  Storage: localStorage only. No AI.
 */
 
-const LS_KEY = 'logseq-ish-planner-demo:v2';
+const LS_KEY = 'logseq-ish-planner-demo:v3';
 const STATUS = ['TODO', 'DOING', 'DONE'];
 
 function todayId() {
@@ -61,14 +63,14 @@ function ensureState() {
 
   const tid = todayId();
   const state = {
-    ui: { currentType: 'journal', currentId: tid },
+    ui: { currentType: 'journal', currentId: tid, panelTab: 'backlinks' },
     journals: {
       [tid]: {
         id: tid,
         title: tid,
         createdAt: nowIso(),
         blocks: [
-          newBlock('오늘 기록을 시작해보자. #tag 를 쓰고 [[Page]] 로 연결해봐.'),
+          newBlock('오늘 무엇을 할까? #work [[ProjectX]]'),
           newBlock('Cmd+Enter 로 TODO/DOING/DONE 상태를 순환한다.'),
           newBlock('{{query status:TODO scope:current}}'),
         ],
@@ -79,11 +81,7 @@ function ensureState() {
         id: 'Dashboard',
         title: 'Dashboard',
         createdAt: nowIso(),
-        blocks: [
-          newBlock('[[Dashboard]] 는 Query 블록을 모아두는 느낌으로 써보자.'),
-          newBlock('{{query status:TODO scope:all}}'),
-          newBlock('{{query status:DOING scope:all}}'),
-        ],
+        blocks: [newBlock('[[Dashboard]] 에 쿼리 블록을 모아두자.'), newBlock('{{query status:DOING scope:all}}')],
       },
     },
     views: [],
@@ -117,12 +115,10 @@ function parseLinks(text) {
 function collectAllBlocks(state) {
   const out = [];
   for (const j of Object.values(state.journals)) {
-    for (const b of j.blocks)
-      out.push({ ...b, scopeType: 'journal', scopeId: j.id, scopeTitle: j.title });
+    for (const b of j.blocks) out.push({ ...b, scopeType: 'journal', scopeId: j.id, scopeTitle: j.title });
   }
   for (const p of Object.values(state.pages)) {
-    for (const b of p.blocks)
-      out.push({ ...b, scopeType: 'page', scopeId: p.id, scopeTitle: p.title });
+    for (const b of p.blocks) out.push({ ...b, scopeType: 'page', scopeId: p.id, scopeTitle: p.title });
   }
   return out;
 }
@@ -130,12 +126,7 @@ function collectAllBlocks(state) {
 function ensurePage(title) {
   const id = title;
   if (state.pages[id]) return;
-  state.pages[id] = {
-    id,
-    title,
-    createdAt: nowIso(),
-    blocks: [newBlock(`[[${title}]] page created.`)],
-  };
+  state.pages[id] = { id, title, createdAt: nowIso(), blocks: [newBlock(`[[${title}]] page created.`)] };
 }
 
 function upsertPagesFromLinks() {
@@ -148,14 +139,14 @@ function upsertPagesFromLinks() {
 
 function currentDoc() {
   const { currentType, currentId } = state.ui;
-  if (currentType === 'journal') return state.journals[currentId];
-  return state.pages[currentId];
+  return currentType === 'journal' ? state.journals[currentId] : state.pages[currentId];
 }
 
 function setCurrentDoc(type, id) {
   state.ui.currentType = type;
   state.ui.currentId = id;
   saveState(state);
+  closeDrawers();
   render();
 }
 
@@ -164,16 +155,13 @@ function cycleStatus(current) {
   return STATUS[(idx + 1) % STATUS.length];
 }
 
-// Query blocks
+// query blocks
 function parseQueryBlock(text) {
   const m = String(text || '').trim().match(/^\{\{query\s+(.+?)\}\}$/i);
   if (!m) return null;
   const body = m[1].trim();
-
-  // simple token parser: key:value pairs, values without spaces
   const tokens = body.split(/\s+/g);
   const q = { status: 'ALL', tag: '', text: '', scope: 'ALL' };
-
   for (const t of tokens) {
     const [kRaw, vRaw] = t.split(':');
     if (!vRaw) continue;
@@ -188,28 +176,14 @@ function parseQueryBlock(text) {
 }
 
 function runQuery(q, forScopeType, forScopeId) {
-  const blocks = collectAllBlocks(state);
-  let filtered = blocks;
-
-  if (q.scope === 'CURRENT') {
-    filtered = filtered.filter(
-      (b) => b.scopeType === forScopeType && b.scopeId === forScopeId
-    );
-  }
-
-  if (q.status && q.status !== 'ALL') {
-    filtered = filtered.filter((b) => b.status === q.status);
-  }
-
-  if (q.tag) {
-    filtered = filtered.filter((b) => parseTags(b.text).includes(q.tag));
-  }
-
+  let filtered = collectAllBlocks(state);
+  if (q.scope === 'CURRENT') filtered = filtered.filter((b) => b.scopeType === forScopeType && b.scopeId === forScopeId);
+  if (q.status && q.status !== 'ALL') filtered = filtered.filter((b) => b.status === q.status);
+  if (q.tag) filtered = filtered.filter((b) => parseTags(b.text).includes(q.tag));
   if (q.text) {
     const low = q.text.toLowerCase();
     filtered = filtered.filter((b) => String(b.text || '').toLowerCase().includes(low));
   }
-
   filtered.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return filtered;
 }
@@ -223,34 +197,45 @@ function viewSubtitle(q) {
   return parts.join(' · ');
 }
 
+// drawers
+function openDrawer(id) {
+  el(id).classList.add('open');
+}
+function closeDrawer(id) {
+  el(id).classList.remove('open');
+}
+function closeDrawers() {
+  closeDrawer('navDrawer');
+  closeDrawer('sidePanel');
+}
+
+function setPanelTab(tab) {
+  state.ui.panelTab = tab;
+  saveState(state);
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  ['backlinks', 'tags', 'views'].forEach((t) => {
+    el(`tab-${t}`).classList.toggle('active', t === tab);
+  });
+}
+
 function renderLists() {
-  // journals
   const journalList = el('journalList');
   journalList.innerHTML = '';
   const journals = Object.values(state.journals).sort((a, b) => b.id.localeCompare(a.id));
   for (const j of journals) {
     const item = document.createElement('div');
-    item.className =
-      'item' +
-      (state.ui.currentType === 'journal' && state.ui.currentId === j.id
-        ? ' active'
-        : '');
+    item.className = 'item' + (state.ui.currentType === 'journal' && state.ui.currentId === j.id ? ' active' : '');
     item.innerHTML = `<div class="item-title">${escapeHtml(j.title)}</div><div class="item-sub">${j.blocks.length} blocks</div>`;
     item.onclick = () => setCurrentDoc('journal', j.id);
     journalList.appendChild(item);
   }
 
-  // pages
   const pageList = el('pageList');
   pageList.innerHTML = '';
   const pages = Object.values(state.pages).sort((a, b) => a.title.localeCompare(b.title));
   for (const p of pages) {
     const item = document.createElement('div');
-    item.className =
-      'item' +
-      (state.ui.currentType === 'page' && state.ui.currentId === p.id
-        ? ' active'
-        : '');
+    item.className = 'item' + (state.ui.currentType === 'page' && state.ui.currentId === p.id ? ' active' : '');
     item.innerHTML = `<div class="item-title">${escapeHtml(p.title)}</div><div class="item-sub">${p.blocks.length} blocks</div>`;
     item.onclick = () => setCurrentDoc('page', p.id);
     pageList.appendChild(item);
@@ -260,15 +245,8 @@ function renderLists() {
 function renderDocHeader() {
   const doc = currentDoc();
   const title = el('docTitle');
-  const sub = el('docSub');
-
-  if (state.ui.currentType === 'journal') {
-    title.textContent = doc.id === todayId() ? 'Today' : `Journal · ${doc.title}`;
-    sub.textContent = 'Cmd+Enter cycles TODO → DOING → DONE · Type #tags and [[Page]] links';
-  } else {
-    title.textContent = doc.title;
-    sub.textContent = 'Type [[Links]] to create pages · Query blocks render results inline';
-  }
+  if (state.ui.currentType === 'journal') title.textContent = doc.id === todayId() ? 'Today' : `Journal · ${doc.title}`;
+  else title.textContent = doc.title;
 }
 
 function renderBlocks() {
@@ -340,7 +318,6 @@ function renderBlocks() {
       saveState(state);
       renderSide();
       renderLists();
-      // inline query render depends on this block
       renderBlocks();
     };
 
@@ -357,7 +334,7 @@ function renderBlocks() {
     main.appendChild(head);
     main.appendChild(ta);
 
-    // tags/links
+    // meta chips
     const tags = parseTags(b.text);
     const links = parseLinks(b.text);
     if (tags.length || links.length) {
@@ -368,7 +345,11 @@ function renderBlocks() {
         const tag = document.createElement('span');
         tag.className = 'tag';
         tag.textContent = `#${t}`;
-        tag.onclick = () => showTag(t);
+        tag.onclick = () => {
+          openDrawer('sidePanel');
+          setPanelTab('tags');
+          showTag(t);
+        };
         meta.appendChild(tag);
       });
 
@@ -387,7 +368,7 @@ function renderBlocks() {
       main.appendChild(meta);
     }
 
-    // query block render
+    // query render
     const q = parseQueryBlock(b.text);
     if (q) {
       const qWrap = document.createElement('div');
@@ -409,6 +390,8 @@ function renderBlocks() {
         state.views.unshift({ id: crypto.randomUUID(), name, query: q, createdAt: nowIso() });
         saveState(state);
         renderSide();
+        openDrawer('sidePanel');
+        setPanelTab('views');
       };
       right.appendChild(btnSave);
 
@@ -416,7 +399,7 @@ function renderBlocks() {
       qHead.appendChild(right);
       qWrap.appendChild(qHead);
 
-      const results = runQuery(q, state.ui.currentType, state.ui.currentId).slice(0, 12);
+      const results = runQuery(q, state.ui.currentType, state.ui.currentId).slice(0, 10);
       const resList = document.createElement('div');
       resList.className = 'mini-list';
       if (!results.length) {
@@ -437,7 +420,6 @@ function renderBlocks() {
     row.appendChild(bullet);
     row.appendChild(main);
     wrap.appendChild(row);
-
     list.appendChild(wrap);
   });
 }
@@ -445,16 +427,10 @@ function renderBlocks() {
 function backlinkItemsForCurrent() {
   const doc = currentDoc();
   const blocks = collectAllBlocks(state);
-
-  let target;
-  if (state.ui.currentType === 'page') target = `[[${doc.title}]]`;
-  else target = doc.id;
+  const target = state.ui.currentType === 'page' ? `[[${doc.title}]]` : doc.id;
 
   return blocks
-    .filter((b) =>
-      b.text.includes(target) ||
-      (state.ui.currentType === 'page' && parseLinks(b.text).includes(doc.title))
-    )
+    .filter((b) => b.text.includes(target) || (state.ui.currentType === 'page' && parseLinks(b.text).includes(doc.title)))
     .filter((b) => !(b.scopeType === state.ui.currentType && b.scopeId === state.ui.currentId));
 }
 
@@ -519,13 +495,12 @@ function showTag(tag) {
 function renderViews() {
   const root = el('views');
   root.innerHTML = '';
-
   if (!state.views.length) {
-    root.innerHTML = `<div class="view"><div class="view-title">No saved views</div><div class="view-sub">Save view from a {{query ...}} block.</div></div>`;
+    root.innerHTML = `<div class="mini-item"><div>No saved views</div><div class="small">Save view from a query block.</div></div>`;
     return;
   }
 
-  state.views.slice(0, 8).forEach((v) => {
+  state.views.slice(0, 10).forEach((v) => {
     const box = document.createElement('div');
     box.className = 'view';
 
@@ -549,7 +524,7 @@ function renderViews() {
     head.appendChild(btnX);
     box.appendChild(head);
 
-    const results = runQuery(v.query, state.ui.currentType, state.ui.currentId).slice(0, 6);
+    const results = runQuery(v.query, state.ui.currentType, state.ui.currentId).slice(0, 5);
     const list = document.createElement('div');
     list.className = 'mini-list';
     if (!results.length) {
@@ -575,6 +550,18 @@ function renderSide() {
 }
 
 function wireUI() {
+  // drawer controls
+  el('btnToggleNav').onclick = () => el('navDrawer').classList.toggle('open');
+  el('btnTogglePanel').onclick = () => el('sidePanel').classList.toggle('open');
+  el('btnCloseNav').onclick = () => closeDrawer('navDrawer');
+  el('btnClosePanel').onclick = () => closeDrawer('sidePanel');
+
+  // tabs
+  document.querySelectorAll('.tab').forEach((btn) => {
+    btn.onclick = () => setPanelTab(btn.dataset.tab);
+  });
+
+  // actions
   el('btnAddBlock').onclick = () => {
     const doc = currentDoc();
     doc.blocks.unshift(newBlock(''));
@@ -591,9 +578,7 @@ function wireUI() {
 
   el('btnToday').onclick = () => {
     const tid = todayId();
-    if (!state.journals[tid]) {
-      state.journals[tid] = { id: tid, title: tid, createdAt: nowIso(), blocks: [newBlock('')] };
-    }
+    if (!state.journals[tid]) state.journals[tid] = { id: tid, title: tid, createdAt: nowIso(), blocks: [newBlock('')] };
     saveState(state);
     setCurrentDoc('journal', tid);
   };
@@ -625,6 +610,24 @@ function wireUI() {
     state = ensureState();
     render();
   };
+
+  // keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && k === 'j') {
+      e.preventDefault();
+      el('navDrawer').classList.toggle('open');
+    }
+    if ((e.metaKey || e.ctrlKey) && k === 'l') {
+      e.preventDefault();
+      el('sidePanel').classList.toggle('open');
+    }
+    if (k === 'escape') {
+      closeDrawers();
+    }
+  });
+
+  setPanelTab(state.ui.panelTab || 'backlinks');
 }
 
 function render() {
