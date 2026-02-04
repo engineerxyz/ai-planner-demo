@@ -8,19 +8,15 @@
   </head>
   <body>
     <header class="topbar">
+      <button id="btnToggleNav" class="icon" aria-label="Open navigation" title="Nav (Cmd+J)">☰</button>
       <div class="brand">
-        <div class="logo">L</div>
-        <div>
-          <div class="title">Logseq-ish Planner Demo</div>
-          <div class="subtitle">Journal-first · keyboard-first · Views (no raw query syntax)</div>
-        </div>
+        <div class="title" id="docTitle">Today</div>
+        <div class="subtitle">Write-first · Markdown-first · Views as lenses</div>
       </div>
-
       <div class="top-actions">
-        <button id="btnToday" class="btn">Today</button>
-        <button id="btnToggleNav" class="btn btn-ghost" title="Toggle navigation (Cmd+J)">Nav</button>
-        <button id="btnTogglePanel" class="btn btn-ghost" title="Toggle panel (Cmd+L)">Panel</button>
-        <button id="btnReset" class="btn btn-danger" title="Clear local demo data">Reset</button>
+        <button id="btnAddBlock" class="icon" aria-label="Add block" title="Add block">＋</button>
+        <button id="btnAddView" class="icon" aria-label="Create view" title="Create view">⌕</button>
+        <button id="btnTogglePanel" class="icon" aria-label="Open panel" title="Panel (Cmd+L)">⧉</button>
       </div>
     </header>
 
@@ -32,7 +28,7 @@
           <div class="drawer-sub">Journals & Pages</div>
         </div>
         <div class="drawer-actions">
-          <button id="btnNewJournal" class="btn btn-small">+ Journal</button>
+          <button id="btnToday" class="btn btn-small">Today</button>
           <button id="btnNewPage" class="btn btn-small btn-ghost">+ Page</button>
           <button id="btnCloseNav" class="btn btn-small btn-ghost">Close</button>
         </div>
@@ -46,6 +42,11 @@
       <div class="drawer-section">
         <div class="section-title">Pages</div>
         <div id="pageList" class="list"></div>
+      </div>
+
+      <div class="drawer-section">
+        <div class="section-title">Danger zone</div>
+        <button id="btnReset" class="btn btn-danger btn-small" title="Clear local demo data">Reset demo data</button>
       </div>
     </aside>
 
@@ -80,33 +81,71 @@
       </div>
 
       <div id="tab-views" class="tab-panel">
-        <div class="hint">Saved views (created from “+ View”).</div>
+        <div class="hint">Saved views</div>
         <div id="views" class="views"></div>
       </div>
     </aside>
 
     <main class="main">
-      <section class="panel">
-        <div class="doc-head">
-          <div>
-            <div class="doc-title" id="docTitle">Today</div>
-            <div class="doc-sub" id="docSub">
-              Cmd+Enter cycles TODO → DOING → DONE · Type #tags and [[Page]] links · Use “+ View” to show filtered blocks
-            </div>
-          </div>
-          <div class="doc-actions">
-            <button id="btnAddBlock" class="btn">+ Block</button>
-            <button id="btnAddView" class="btn btn-ghost" title="Insert a View card">+ View</button>
-          </div>
-        </div>
-
+      <section class="doc">
         <div id="blockList" class="blocks"></div>
       </section>
     </main>
 
-    <footer class="footer">
-      <div>This is a UX demo only. No AI, no backend. Data stays in this browser (localStorage).</div>
-    </footer>
+    <!-- View editor (bottom sheet) -->
+    <div id="overlay" class="overlay" hidden></div>
+    <section id="viewSheet" class="sheet" hidden aria-label="Create view">
+      <div class="sheet-head">
+        <div>
+          <div class="sheet-title">Create View</div>
+          <div class="sheet-sub">A view is a lens. It doesn’t create new data.</div>
+        </div>
+        <button id="btnCloseSheet" class="icon" aria-label="Close">✕</button>
+      </div>
+
+      <div class="form">
+        <label class="field">
+          <div class="label">Name (optional)</div>
+          <input id="viewName" type="text" placeholder="e.g., Today TODO" />
+        </label>
+
+        <div class="row">
+          <label class="field">
+            <div class="label">Status</div>
+            <select id="viewStatus">
+              <option value="TODO">TODO</option>
+              <option value="DOING">DOING</option>
+              <option value="DONE">DONE</option>
+              <option value="ALL">ALL</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <div class="label">Scope</div>
+            <select id="viewScope">
+              <option value="CURRENT">Current page</option>
+              <option value="ALL">All pages</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            <div class="label">Tag (optional)</div>
+            <input id="viewTag" type="text" placeholder="work (no #)" />
+          </label>
+          <label class="field">
+            <div class="label">Contains (optional)</div>
+            <input id="viewContains" type="text" placeholder="keyword" />
+          </label>
+        </div>
+
+        <div class="sheet-actions">
+          <button id="btnInsertView" class="btn">Insert view</button>
+          <button id="btnInsertAndSaveView" class="btn btn-ghost">Insert + Save</button>
+        </div>
+      </div>
+    </section>
 
     <script src="./app.js"></script>
   </body>

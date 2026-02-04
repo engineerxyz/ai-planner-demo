@@ -1,13 +1,14 @@
 /*
-  Logseq-ish Planner Demo v4
-
-  Change: Query is no longer a raw "{{query ...}}" syntax block.
-  Instead, users create a View card (filters) that renders selected blocks.
+  Logseq-ish Planner Demo v5
+  - Write-first chrome (minimal header)
+  - Markdown-first (plain text input that can contain Markdown)
+  - Views are lenses: create via bottom sheet, not raw syntax
+  - Reduce cardiness: blocks feel like notes, controls appear on focus
 
   Storage: localStorage only. No AI.
 */
 
-const LS_KEY = 'logseq-ish-planner-demo:v4';
+const LS_KEY = 'logseq-ish-planner-demo:v5';
 const STATUS = ['TODO', 'DOING', 'DONE'];
 
 function todayId() {
@@ -57,9 +58,9 @@ function newViewBlock(view) {
     type: 'view',
     view: {
       name: view.name || '',
-      scope: view.scope || 'CURRENT', // CURRENT | ALL
-      status: view.status || 'TODO', // TODO | DOING | DONE | ALL
-      tag: view.tag || '', // without #
+      scope: view.scope || 'CURRENT',
+      status: view.status || 'TODO',
+      tag: view.tag || '',
       contains: view.contains || '',
     },
     createdAt: nowIso(),
@@ -81,7 +82,7 @@ function ensureState() {
         createdAt: nowIso(),
         blocks: [
           newTextBlock('오늘 무엇을 할까? #work [[ProjectX]]'),
-          newTextBlock('Cmd+Enter 로 TODO/DOING/DONE 상태를 순환한다.'),
+          newTextBlock('- Markdown도 그냥 적으면 된다.\n- 예: **굵게**, `code`, 링크 등'),
           newViewBlock({ name: '오늘 TODO', status: 'TODO', scope: 'CURRENT' }),
         ],
       },
@@ -91,7 +92,7 @@ function ensureState() {
         id: 'Dashboard',
         title: 'Dashboard',
         createdAt: nowIso(),
-        blocks: [newTextBlock('[[Dashboard]] 에 View 카드(필터)를 모아두자.'), newViewBlock({ name: '전체 DOING', status: 'DOING', scope: 'ALL' })],
+        blocks: [newTextBlock('[[Dashboard]] 에 View(렌즈)를 모아두자.'), newViewBlock({ name: '전체 DOING', status: 'DOING', scope: 'ALL' })],
       },
     },
     savedViews: [],
@@ -157,6 +158,7 @@ function setCurrentDoc(type, id) {
   state.ui.currentId = id;
   saveState(state);
   closeDrawers();
+  closeSheet();
   render();
 }
 
@@ -166,9 +168,7 @@ function cycleStatus(current) {
 }
 
 function runView(view, forScopeType, forScopeId) {
-  let filtered = collectAllBlocks(state)
-    .filter((b) => b.type === 'text')
-    .map((b) => b);
+  let filtered = collectAllBlocks(state).filter((b) => b.type === 'text');
 
   if ((view.scope || 'CURRENT') === 'CURRENT') {
     filtered = filtered.filter((b) => b.scopeType === forScopeType && b.scopeId === forScopeId);
@@ -197,6 +197,7 @@ function viewLabel(view) {
   return parts.join(' · ');
 }
 
+// drawers
 function openDrawer(id) {
   el(id).classList.add('open');
 }
@@ -215,6 +216,35 @@ function setPanelTab(tab) {
   ['backlinks', 'tags', 'views'].forEach((t) => {
     el(`tab-${t}`).classList.toggle('active', t === tab);
   });
+}
+
+// view sheet
+let sheetMode = { kind: 'create', targetBlockId: null };
+function openSheet(mode) {
+  sheetMode = mode;
+  el('overlay').hidden = false;
+  el('viewSheet').hidden = false;
+}
+function closeSheet() {
+  el('overlay').hidden = true;
+  el('viewSheet').hidden = true;
+  sheetMode = { kind: 'create', targetBlockId: null };
+}
+function readSheetView() {
+  return {
+    name: el('viewName').value.trim(),
+    status: el('viewStatus').value,
+    scope: el('viewScope').value,
+    tag: el('viewTag').value.trim().replace(/^#/, ''),
+    contains: el('viewContains').value.trim(),
+  };
+}
+function writeSheetView(view) {
+  el('viewName').value = view?.name || '';
+  el('viewStatus').value = view?.status || 'TODO';
+  el('viewScope').value = view?.scope || 'CURRENT';
+  el('viewTag').value = view?.tag || '';
+  el('viewContains').value = view?.contains || '';
 }
 
 function renderLists() {
@@ -241,9 +271,9 @@ function renderLists() {
   }
 }
 
-function renderDocHeader() {
+function renderDocTitle() {
   const doc = currentDoc();
-  const title = el('docTitle');
+  const title = document.getElementById('docTitle');
   if (state.ui.currentType === 'journal') title.textContent = doc.id === todayId() ? 'Today' : `Journal · ${doc.title}`;
   else title.textContent = doc.title;
 }
@@ -277,7 +307,7 @@ function renderTextBlock(doc, b) {
   const btnCycle = document.createElement('button');
   btnCycle.className = 'icon-btn';
   btnCycle.textContent = '↻';
-  btnCycle.title = 'Cycle status';
+  btnCycle.title = 'Cycle status (Cmd+Enter)';
   btnCycle.onclick = () => {
     b.status = cycleStatus(b.status);
     b.updatedAt = nowIso();
@@ -303,7 +333,7 @@ function renderTextBlock(doc, b) {
 
   const ta = document.createElement('textarea');
   ta.value = b.text;
-  ta.placeholder = 'Write… (#tag, [[Page]])';
+  ta.placeholder = 'Write… (Markdown, #tag, [[Page]])';
 
   ta.oninput = () => {
     b.text = ta.value;
@@ -312,7 +342,6 @@ function renderTextBlock(doc, b) {
     saveState(state);
     renderSide();
     renderLists();
-    renderBlocks();
   };
 
   ta.onkeydown = (e) => {
@@ -367,28 +396,9 @@ function renderTextBlock(doc, b) {
   return wrap;
 }
 
-function promptCreateOrEditView(existing) {
-  const v = { ...(existing || {}) };
-  v.name = prompt('View name (optional)?', v.name || '') ?? v.name;
-
-  const status = (prompt('Status? (TODO/DOING/DONE/ALL)', v.status || 'TODO') || v.status || 'TODO').toUpperCase();
-  v.status = ['TODO', 'DOING', 'DONE', 'ALL'].includes(status) ? status : 'TODO';
-
-  const scope = (prompt('Scope? (CURRENT/ALL)', v.scope || 'CURRENT') || v.scope || 'CURRENT').toUpperCase();
-  v.scope = scope === 'ALL' ? 'ALL' : 'CURRENT';
-
-  const tag = prompt('Tag? (without #, optional)', v.tag || '') ?? v.tag;
-  v.tag = String(tag || '').trim();
-
-  const contains = prompt('Contains? (keyword, optional)', v.contains || '') ?? v.contains;
-  v.contains = String(contains || '').trim();
-
-  return v;
-}
-
 function renderViewBlock(doc, b) {
   const wrap = document.createElement('div');
-  wrap.className = 'block view-block';
+  wrap.className = 'block';
 
   const row = document.createElement('div');
   row.className = 'block-row';
@@ -415,10 +425,8 @@ function renderViewBlock(doc, b) {
   btnEdit.className = 'btn btn-small btn-ghost';
   btnEdit.textContent = 'Edit';
   btnEdit.onclick = () => {
-    b.view = promptCreateOrEditView(b.view);
-    b.updatedAt = nowIso();
-    saveState(state);
-    render();
+    writeSheetView(b.view);
+    openSheet({ kind: 'edit', targetBlockId: b.id });
   };
 
   const btnSave = document.createElement('button');
@@ -614,15 +622,28 @@ function renderSide() {
   renderSavedViews();
 }
 
+function applyEditViewById(blockId, nextView) {
+  const doc = currentDoc();
+  const target = doc.blocks.find((x) => x.id === blockId);
+  if (!target || target.type !== 'view') return;
+  target.view = nextView;
+  target.updatedAt = nowIso();
+  saveState(state);
+  render();
+}
+
 function wireUI() {
   el('btnToggleNav').onclick = () => el('navDrawer').classList.toggle('open');
   el('btnTogglePanel').onclick = () => el('sidePanel').classList.toggle('open');
   el('btnCloseNav').onclick = () => closeDrawer('navDrawer');
   el('btnClosePanel').onclick = () => closeDrawer('sidePanel');
 
-  document.querySelectorAll('.tab').forEach((btn) => {
-    btn.onclick = () => setPanelTab(btn.dataset.tab);
-  });
+  el('btnToday').onclick = () => {
+    const tid = todayId();
+    if (!state.journals[tid]) state.journals[tid] = { id: tid, title: tid, createdAt: nowIso(), blocks: [newTextBlock('')] };
+    saveState(state);
+    setCurrentDoc('journal', tid);
+  };
 
   el('btnAddBlock').onclick = () => {
     const doc = currentDoc();
@@ -632,31 +653,8 @@ function wireUI() {
   };
 
   el('btnAddView').onclick = () => {
-    const doc = currentDoc();
-    const view = promptCreateOrEditView({ name: '', status: 'TODO', scope: 'CURRENT', tag: '', contains: '' });
-    doc.blocks.unshift(newViewBlock(view));
-    saveState(state);
-    render();
-  };
-
-  el('btnToday').onclick = () => {
-    const tid = todayId();
-    if (!state.journals[tid]) state.journals[tid] = { id: tid, title: tid, createdAt: nowIso(), blocks: [newTextBlock('')] };
-    saveState(state);
-    setCurrentDoc('journal', tid);
-  };
-
-  el('btnNewJournal').onclick = () => {
-    const base = todayId();
-    let id = base;
-    let n = 1;
-    while (state.journals[id]) {
-      n += 1;
-      id = `${base} (${n})`;
-    }
-    state.journals[id] = { id, title: id, createdAt: nowIso(), blocks: [newTextBlock('')] };
-    saveState(state);
-    setCurrentDoc('journal', id);
+    writeSheetView({ name: '', status: 'TODO', scope: 'CURRENT', tag: '', contains: '' });
+    openSheet({ kind: 'create', targetBlockId: null });
   };
 
   el('btnNewPage').onclick = () => {
@@ -674,6 +672,52 @@ function wireUI() {
     render();
   };
 
+  // tabs
+  document.querySelectorAll('.tab').forEach((btn) => {
+    btn.onclick = () => setPanelTab(btn.dataset.tab);
+  });
+
+  // sheet
+  el('overlay').onclick = closeSheet;
+  el('btnCloseSheet').onclick = closeSheet;
+
+  el('btnInsertView').onclick = () => {
+    const doc = currentDoc();
+    const view = readSheetView();
+
+    if (sheetMode.kind === 'edit' && sheetMode.targetBlockId) {
+      applyEditViewById(sheetMode.targetBlockId, view);
+      closeSheet();
+      return;
+    }
+
+    doc.blocks.unshift(newViewBlock(view));
+    saveState(state);
+    closeSheet();
+    render();
+  };
+
+  el('btnInsertAndSaveView').onclick = () => {
+    const doc = currentDoc();
+    const view = readSheetView();
+
+    const name = view.name || viewLabel(view);
+    state.savedViews.unshift({ id: crypto.randomUUID(), name, view, createdAt: nowIso() });
+
+    if (sheetMode.kind === 'edit' && sheetMode.targetBlockId) {
+      applyEditViewById(sheetMode.targetBlockId, view);
+    } else {
+      doc.blocks.unshift(newViewBlock(view));
+    }
+
+    saveState(state);
+    closeSheet();
+    openDrawer('sidePanel');
+    setPanelTab('views');
+    render();
+  };
+
+  // keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && k === 'j') {
@@ -686,6 +730,7 @@ function wireUI() {
     }
     if (k === 'escape') {
       closeDrawers();
+      closeSheet();
     }
   });
 
@@ -695,7 +740,7 @@ function wireUI() {
 function render() {
   upsertPagesFromLinks();
   renderLists();
-  renderDocHeader();
+  renderDocTitle();
   renderBlocks();
   renderSide();
 }
