@@ -1,15 +1,16 @@
 /*
-  Logseq-ish Planner Demo v5
-  - Write-first chrome (minimal header)
-  - Markdown-first (plain text input that can contain Markdown)
-  - Views are lenses: create via bottom sheet, not raw syntax
-  - Reduce cardiness: blocks feel like notes, controls appear on focus
+  Logseq-ish Planner Demo v6
+  - Source-first Markdown: edit in plain text, read as rendered Markdown
+  - Read mode shows Markdown preview; click to edit
+  - Views are lenses: create via bottom sheet
 
   Storage: localStorage only. No AI.
 */
 
-const LS_KEY = 'logseq-ish-planner-demo:v5';
+const LS_KEY = 'logseq-ish-planner-demo:v6';
 const STATUS = ['TODO', 'DOING', 'DONE'];
+
+let editingBlockId = null;
 
 function todayId() {
   const d = new Date();
@@ -82,7 +83,7 @@ function ensureState() {
         createdAt: nowIso(),
         blocks: [
           newTextBlock('오늘 무엇을 할까? #work [[ProjectX]]'),
-          newTextBlock('- Markdown도 그냥 적으면 된다.\n- 예: **굵게**, `code`, 링크 등'),
+          newTextBlock('- Markdown은 **읽을 땐 렌더**, 편집 땐 소스로 쓴다.\n- 예: `code`, [link](https://example.com)'),
           newViewBlock({ name: '오늘 TODO', status: 'TODO', scope: 'CURRENT' }),
         ],
       },
@@ -157,6 +158,7 @@ function setCurrentDoc(type, id) {
   state.ui.currentType = type;
   state.ui.currentId = id;
   saveState(state);
+  editingBlockId = null;
   closeDrawers();
   closeSheet();
   render();
@@ -278,6 +280,50 @@ function renderDocTitle() {
   else title.textContent = doc.title;
 }
 
+// --- Minimal Markdown renderer (safe, subset) ---
+function mdInline(s) {
+  // Escape first
+  let out = escapeHtml(s);
+  // Inline code
+  out = out.replace(/`([^`]+)`/g, (_, c) => `<code>${escapeHtml(c)}</code>`);
+  // Bold
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Links [text](url)
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  // [[Page]] links (keep as clickable spans)
+  out = out.replace(/\[\[([^\]]+)\]\]/g, (_, name) => `<span class="link" data-page="${escapeHtml(String(name).trim())}">[[${escapeHtml(String(name).trim())}]]</span>`);
+  // #tags
+  out = out.replace(/(^|\s)#([a-zA-Z0-9_\-가-힣]+)/g, (_, sp, tag) => `${sp}<span class="tag" data-tag="${escapeHtml(tag)}">#${escapeHtml(tag)}</span>`);
+  return out;
+}
+
+function mdToHtml(text) {
+  const lines = String(text || '').split('\n');
+  const blocks = [];
+  let listBuf = [];
+
+  function flushList() {
+    if (!listBuf.length) return;
+    const lis = listBuf.map((li) => `<li>${mdInline(li)}</li>`).join('');
+    blocks.push(`<ul>${lis}</ul>`);
+    listBuf = [];
+  }
+
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/g, '');
+    const m = line.match(/^\s*[-*]\s+(.*)$/);
+    if (m) {
+      listBuf.push(m[1]);
+      continue;
+    }
+    flushList();
+    if (line.trim() === '') continue;
+    blocks.push(`<p>${mdInline(line)}</p>`);
+  }
+  flushList();
+  return blocks.join('');
+}
+
 function renderTextBlock(doc, b) {
   const wrap = document.createElement('div');
   wrap.className = 'block';
@@ -331,63 +377,76 @@ function renderTextBlock(doc, b) {
   head.appendChild(pill);
   head.appendChild(tools);
 
-  const ta = document.createElement('textarea');
-  ta.value = b.text;
-  ta.placeholder = 'Write… (Markdown, #tag, [[Page]])';
-
-  ta.oninput = () => {
-    b.text = ta.value;
-    b.updatedAt = nowIso();
-    upsertPagesFromLinks();
-    saveState(state);
-    renderSide();
-    renderLists();
-  };
-
-  ta.onkeydown = (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      b.status = cycleStatus(b.status);
-      b.updatedAt = nowIso();
-      saveState(state);
-      render();
-    }
-  };
-
   main.appendChild(head);
-  main.appendChild(ta);
 
-  const tags = parseTags(b.text);
-  const links = parseLinks(b.text);
-  if (tags.length || links.length) {
-    const meta = document.createElement('div');
-    meta.className = 'block-meta';
+  if (editingBlockId === b.id) {
+    const ta = document.createElement('textarea');
+    ta.value = b.text;
+    ta.placeholder = 'Write… (Markdown, #tag, [[Page]])';
 
-    tags.forEach((t) => {
-      const tag = document.createElement('span');
-      tag.className = 'tag';
-      tag.textContent = `#${t}`;
-      tag.onclick = () => {
+    ta.oninput = () => {
+      b.text = ta.value;
+      b.updatedAt = nowIso();
+      upsertPagesFromLinks();
+      saveState(state);
+      renderLists();
+      renderSide();
+    };
+
+    ta.onkeydown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        b.status = cycleStatus(b.status);
+        b.updatedAt = nowIso();
+        saveState(state);
+        render();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        editingBlockId = null;
+        render();
+      }
+    };
+
+    ta.onblur = () => {
+      editingBlockId = null;
+      render();
+    };
+
+    // autofocus on mount
+    setTimeout(() => ta.focus(), 0);
+    main.appendChild(ta);
+  } else {
+    const preview = document.createElement('div');
+    preview.className = 'md-preview';
+    preview.innerHTML = mdToHtml(b.text);
+
+    preview.onclick = () => {
+      editingBlockId = b.id;
+      render();
+    };
+
+    // Handle clicks inside preview for tags/pages
+    preview.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      const page = t.dataset.page;
+      const tag = t.dataset.tag;
+      if (page) {
+        e.preventDefault();
+        ensurePage(page);
+        saveState(state);
+        setCurrentDoc('page', page);
+      }
+      if (tag) {
+        e.preventDefault();
         openDrawer('sidePanel');
         setPanelTab('tags');
-        showTag(t);
-      };
-      meta.appendChild(tag);
+        showTag(tag);
+      }
     });
 
-    links.forEach((l) => {
-      const lk = document.createElement('span');
-      lk.className = 'link';
-      lk.textContent = `[[${l}]]`;
-      lk.onclick = () => {
-        ensurePage(l);
-        saveState(state);
-        setCurrentDoc('page', l);
-      };
-      meta.appendChild(lk);
-    });
-
-    main.appendChild(meta);
+    main.appendChild(preview);
   }
 
   row.appendChild(bullet);
@@ -647,8 +706,10 @@ function wireUI() {
 
   el('btnAddBlock').onclick = () => {
     const doc = currentDoc();
-    doc.blocks.unshift(newTextBlock(''));
+    const block = newTextBlock('');
+    doc.blocks.unshift(block);
     saveState(state);
+    editingBlockId = block.id;
     render();
   };
 
@@ -669,6 +730,7 @@ function wireUI() {
     if (!confirm('Reset demo? This clears local demo data in this browser.')) return;
     localStorage.removeItem(LS_KEY);
     state = ensureState();
+    editingBlockId = null;
     render();
   };
 
@@ -731,6 +793,8 @@ function wireUI() {
     if (k === 'escape') {
       closeDrawers();
       closeSheet();
+      editingBlockId = null;
+      render();
     }
   });
 
